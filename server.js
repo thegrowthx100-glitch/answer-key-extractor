@@ -57,23 +57,6 @@ function normalizeOptions(raw) {
   return o;
 }
 
-async function fetchWithRetry(url, ctx, attempts = 3) {
-  let lastErr;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fetchText(url, ctx);
-    } catch (e) {
-      lastErr = e;
-      const status = (e && e.status) || 0;
-      // 408/429/5xx and network errors are worth retrying; other 4xx are not.
-      const retryable = !status || status === 408 || status === 429 || status >= 500;
-      if (!retryable) throw e;
-      await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
-    }
-  }
-  throw lastErr;
-}
-
 app.get('/api/health', (req, res) => {
   res.json({ ok: true });
 });
@@ -123,7 +106,7 @@ app.post('/api/process', requireAuth, async (req, res) => {
   // Chrome, whose genuine browser fingerprint passes like the user's browser.
   const fetchPartHtml = async (u) => {
     try {
-      const { text } = await fetchText(u, { jar, referer: urls[0], timeoutMs: 75000 });
+      const { text } = await fetchText(u, { jar, referer: urls[0], timeoutMs: 30000 });
       return text;
     } catch (e) {
       const status = (e && e.status) || 0;
@@ -142,9 +125,20 @@ app.post('/api/process', requireAuth, async (req, res) => {
     }
   };
 
+  // Hard time budgets so a bad moment (dead Chrome, hard Cloudflare block)
+  // degrades into fast, clear per-part errors instead of hanging the request.
+  const startedAt = Date.now();
+  const OVERALL_BUDGET_MS = 120000;
+  const PART_BUDGET_MS = 45000;
+
   const fetchOne = async (u, i) => {
+    const partDeadline = Date.now() + PART_BUDGET_MS;
     let lastError = 'Fetch failed.';
     for (let attempt = 0; attempt < 3; attempt++) {
+      if (Date.now() > partDeadline || Date.now() - startedAt > OVERALL_BUDGET_MS) {
+        lastError = 'Skipped — fetching was taking too long. Try again in a moment.';
+        break;
+      }
       try {
         const text = await fetchPartHtml(u);
         const parsed = parsePart(text, u, opts);
@@ -157,8 +151,9 @@ app.post('/api/process', requireAuth, async (req, res) => {
         lastError = `The page loaded but did not contain a response sheet (${parsed.invalidHint}) — the link may have expired or been used already.`;
       } catch (e) {
         lastError = (e && e.message) || 'Fetch failed.';
+        if (e && e.cloudflareChallenge) break; // retrying now won't help
       }
-      if (attempt < 2) await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
     }
     results[i] = { ok: false, error: lastError };
   };
