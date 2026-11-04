@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SSC Response Sheet Cleaner — Combined PDF</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
+</head>
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <button class="logout-chip" id="logoutBtn" hidden>Log out</button>
+
+  <!-- Login view -->
+  <section class="login-view" id="loginView" hidden>
+    <form class="card login-card" id="loginForm" autocomplete="off">
+      <div class="login-logo">🔒</div>
+      <h2>Sign in</h2>
+      <p class="login-sub">Enter your credentials to use the tool.</p>
+      <label class="field-label" for="loginUser">User ID</label>
+      <input id="loginUser" type="text" autocomplete="username" required>
+      <label class="field-label" for="loginPass">Password</label>
+      <input id="loginPass" type="password" autocomplete="current-password" required>
+      <button type="submit" class="btn primary big" id="loginBtn"><span class="btn-label">Log in</span></button>
+      <p class="login-error" id="loginError" hidden></p>
+    </form>
+  </section>
+
+  <div id="appMain" hidden>
+  <header class="hero">
+    <div class="hero-badge">SSC CGL · Answer Key / Response Sheet</div>
+    <h1>Response Sheet <span class="accent">Cleaner</span></h1>
+    <p class="hero-sub">
+      Paste your answer-key link — all four parts (A–D) are fetched, the watermark and personal
+      details are removed, and you get one clean PDF named by exam date &amp; shift.
+    </p>
+  </header>
+
+  <main class="wrap">
+    <!-- Input card -->
+    <section class="card input-card" id="inputCard">
+      <form id="urlForm" autocomplete="off">
+        <label class="field-label" for="urlInput">Answer key / response sheet URL</label>
+        <div class="url-row">
+          <input
+            id="urlInput"
+            type="url"
+            inputmode="url"
+            placeholder="https://sscexams.cbexams.com/CGLE2026.../ViewCandResponse.aspx?EncKey=..."
+            required
+          >
+          <button type="button" class="btn ghost" id="pasteBtn" title="Paste from clipboard">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+            <span>Paste</span>
+          </button>
+        </div>
+
+        <button type="button" class="options-toggle" id="optionsToggle" aria-expanded="false">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+          Clean-up options
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+
+        <div class="options-panel" id="optionsPanel" hidden>
+          <label class="switch-row"><input type="checkbox" id="optChallenge" checked><span class="track"></span><span class="lbl">Remove “Click Here to Challenge” buttons</span></label>
+          <label class="switch-row"><input type="checkbox" id="optHindi" checked><span class="track"></span><span class="lbl">Remove dead “Hindi version” switches</span></label>
+          <label class="switch-row"><input type="checkbox" id="optHeader" checked><span class="track"></span><span class="lbl">Keep SSC header / logo</span></label>
+          <label class="switch-row"><input type="checkbox" id="optLegend" checked><span class="track"></span><span class="lbl">Keep colour legend (correct / wrong / unanswered)</span></label>
+          <p class="options-note">Always removed: watermark, roll no., candidate name, centre name, Save/Print, undertaking &amp; note boxes, part-switch buttons.</p>
+        </div>
+
+        <button type="submit" class="btn primary big" id="fetchBtn">
+          <span class="btn-label">Fetch &amp; Clean</span>
+        </button>
+
+        <div class="status-line" id="statusLine" hidden>
+          <span class="spinner"></span><span id="statusText">Contacting exam server…</span>
+        </div>
+      </form>
+    </section>
+
+    <!-- Error -->
+    <section class="card error-card" id="errorCard" hidden>
+      <div class="err-head">⚠️ <span id="errorText"></span></div>
+      <p class="err-hint">Check that the page opens in your own browser. EncKey links are tied to a session and may expire.</p>
+    </section>
+
+    <!-- Results -->
+    <section class="results" id="results" hidden>
+      <div class="card meta-card">
+        <div class="meta-chips" id="metaChips"></div>
+        <div class="part-chips" id="partChips"></div>
+        <div class="warn-box" id="warnBox" hidden>
+          <b>⚠️ Some parts could not be fetched — they are excluded from preview and PDF:</b>
+          <ul id="warnList"></ul>
+          <button class="btn ghost small" id="retryBtn">↺ Retry failed parts</button>
+        </div>
+      </div>
+
+      <div class="card doc-card">
+        <div class="tabs-row">
+          <div class="tabs" id="tabs" role="tablist"></div>
+          <div class="doc-actions">
+            <button class="btn ghost small" id="printBtn" title="Open a print-friendly view">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              Print view
+            </button>
+          </div>
+        </div>
+        <div class="doc-panel" id="docPanel" aria-live="polite"></div>
+        <div class="dl-bar">
+          <button class="btn primary" id="pdfBtn">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span id="pdfBtnLabel">Download Combined PDF</span>
+          </button>
+          <span class="dl-filename" id="dlFilename"></span>
+        </div>
+      </div>
+
+      <button class="btn ghost start-over" id="resetBtn">← Process another link</button>
+    </section>
+  </main>
+
+  <footer class="foot">
+    Runs locally · Your link never leaves this machine except to fetch from the exam server.
+  </footer>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

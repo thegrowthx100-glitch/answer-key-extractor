@@ -1,0 +1,19 @@
+{
+  "name": "ssc-response-cleaner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fetch SSC candidate response sheets (all 4 parts), clean out watermarks/PII/site chrome, preview and export a combined PDF named by exam date + shift.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/run-cleaner-test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "express": "^4.21.2",
+    "puppeteer": "^23.11.1"
+  }
+}
