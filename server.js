@@ -5,8 +5,15 @@ const path = require('path');
 const crypto = require('crypto');
 const { deriveBranchUrls } = require('./lib/urls');
 const { assertAllowedUrl, fetchText, CookieJar } = require('./lib/fetcher');
-const { parsePart, partViewHtml, combinedHtml, buildFilename, DEFAULT_OPTIONS } = require('./lib/cleaner');
-const { renderPdf } = require('./lib/pdf');
+const {
+  parsePart,
+  partViewHtml,
+  combinedHtml,
+  buildFilename,
+  patchInfoCard,
+  DEFAULT_OPTIONS,
+} = require('./lib/cleaner');
+const { renderPdf, fetchViaBrowser } = require('./lib/pdf');
 const store = require('./lib/store');
 
 // ---------- simple login (hard-coded local credentials) ----------
@@ -112,11 +119,34 @@ app.post('/api/process', requireAuth, async (req, res) => {
   const jar = new CookieJar();
   const results = [];
 
+  // Plain fetch first; if Cloudflare blocks it (403/503), retry through real
+  // Chrome, whose genuine browser fingerprint passes like the user's browser.
+  const fetchPartHtml = async (u) => {
+    try {
+      const { text } = await fetchText(u, { jar, referer: urls[0], timeoutMs: 75000 });
+      return text;
+    } catch (e) {
+      const status = (e && e.status) || 0;
+      if (status === 403 || status === 503) {
+        const { html, status: browserStatus } = await fetchViaBrowser(u);
+        if (browserStatus && browserStatus >= 400) {
+          const err = new Error(
+            `Exam server returned HTTP ${browserStatus} even in a real Chrome window — wait a minute and try again.`
+          );
+          err.status = browserStatus;
+          throw err;
+        }
+        return html;
+      }
+      throw e;
+    }
+  };
+
   const fetchOne = async (u, i) => {
     let lastError = 'Fetch failed.';
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const { text } = await fetchText(u, { jar, referer: urls[0], timeoutMs: 75000 });
+        const text = await fetchPartHtml(u);
         const parsed = parsePart(text, u, opts);
         if (parsed.valid) {
           results[i] = { ok: true, parsed };
@@ -161,12 +191,30 @@ app.post('/api/process', requireAuth, async (req, res) => {
   }
 
   const succeeded = results.filter((r) => r && r.ok);
+
   if (!succeeded.length) {
     const err = results.find((r) => r && r.error);
     return res.status(422).json({ error: (err && err.error) || 'Could not read a response sheet from this link.' });
   }
 
   const firstParsed = succeeded[0].parsed;
+
+  // Some sessions render Part A's date/time cells empty while B–D carry them —
+  // fill the gaps so previews and the PDF header show exam date + shift.
+  if (!firstParsed.meta.testDate) {
+    const dateSource = succeeded.find((r) => r.parsed.meta.testDate);
+    if (dateSource) {
+      firstParsed.meta.testDate = dateSource.parsed.meta.testDate;
+      firstParsed.meta.testTime = dateSource.parsed.meta.testTime || firstParsed.meta.testTime;
+      firstParsed.meta.shift = dateSource.parsed.meta.shift || firstParsed.meta.shift;
+      firstParsed.meta.shiftTime = dateSource.parsed.meta.shiftTime || firstParsed.meta.shiftTime;
+      firstParsed.infoHtml = patchInfoCard(firstParsed.infoHtml, {
+        testDate: firstParsed.meta.testDate,
+        testTime: firstParsed.meta.testTime,
+      });
+    }
+  }
+
   const meta = { ...firstParsed.meta };
   const totalQuestions = succeeded.reduce((n, r) => n + r.parsed.meta.questionCount, 0);
   const filename = buildFilename(meta);
